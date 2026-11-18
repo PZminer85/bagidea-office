@@ -17,7 +17,7 @@ func _ready() -> void:
 	if "--shot" in OS.get_cmdline_user_args():
 		_take_shot()
 
-	if "--wallpaper" in OS.get_cmdline_user_args():
+	if "--wallpaper" in OS.get_cmdline_user_args() and OS.get_environment("BAGIDEA_WINDOWED") == "":
 		# Borderless, covering the primary screen — the attach script then
 		# re-parents this window into the desktop's WorkerW layer.
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)

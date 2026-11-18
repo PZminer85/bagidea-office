@@ -87,7 +87,7 @@ func _ready() -> void:
 		# over that large area, 4096 read soft/faint at normal zoom — 8192 packs
 		# enough texels to stay CRISP at the far camera, the same way the map
 		# concentrates when you zoom in. Worth the GPU at the 30 fps wallpaper rung.
-		RenderingServer.directional_shadow_atlas_set_size(8192, true)
+		RenderingServer.directional_shadow_atlas_set_size(4096 if OS.get_environment("BAGIDEA_WINDOWED") != "" else 8192, true)
 		var cam: Camera3D = $CameraRig/Camera3D
 		cam.attributes.dof_blur_far_enabled = false
 		cam.attributes.dof_blur_near_enabled = false
@@ -175,7 +175,18 @@ func _opaque_after_first_frame() -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().transparent_bg = false
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, false)
-	if "--wallpaper" in OS.get_cmdline_user_args():
+	if OS.get_environment("BAGIDEA_WINDOWED") != "":
+		# Paolo: finestra normale invece dello sfondo, leggera per la batteria.
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+		DisplayServer.window_set_size(Vector2i(1280, 760))
+		DisplayServer.window_set_position(Vector2i(80, 80))
+		Engine.max_fps = 20
+		# niente sfocatura/vignettatura ai bordi né grana pellicola
+		for n in ["CinemaLayer", "GrainLayer"]:
+			var layer := get_node_or_null(n)
+			if layer:
+				layer.visible = false
+	elif "--wallpaper" in OS.get_cmdline_user_args():
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 		DisplayServer.window_set_position(Vector2i.ZERO)
 		DisplayServer.window_set_size(DisplayServer.screen_get_size())
@@ -206,9 +217,11 @@ func _process(delta: float) -> void:
 			_last_minute = minute_of_day
 			_apply_daylight()
 
-	if _wallpaper_mode:
-		# Occlusion throttle: shim writes /tmp/bagidea_occ when the window is
-		# fully hidden — drop to 2 fps so we consume near-zero GPU while invisible.
+	if _windowed:
+		# ridotta a icona → 1 fps, in secondo piano → 5 fps, in primo piano → 20 fps
+		_win_check_timer -= delta
+		if _win_check_timer <= 0.0:
+			_wle invisible.
 		_occ_check_timer -= delta
 		if _occ_check_timer <= 0.0:
 			_occ_check_timer = 0.5
