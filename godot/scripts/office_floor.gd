@@ -29,6 +29,9 @@ var _hour_override := -1.0
 var _cli_pinned := false  # --hour=N beats replayed ui.daylight events
 
 var _wallpaper_mode := false
+# Paolo: modalità finestra — fps in base allo stato della finestra
+var _windowed := OS.get_environment("BAGIDEA_WINDOWED") != ""
+var _win_check_timer := 0.0
 var _occ_check_timer := 0.0
 var _occluded := false
 var _fps_log_timer := 0.0
@@ -221,7 +224,18 @@ func _process(delta: float) -> void:
 		# ridotta a icona → 1 fps, in secondo piano → 5 fps, in primo piano → 20 fps
 		_win_check_timer -= delta
 		if _win_check_timer <= 0.0:
-			_wle invisible.
+			_win_check_timer = 0.5
+			var target := 20
+			if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_MINIMIZED:
+				target = 1
+			elif not DisplayServer.window_is_focused():
+				target = 5
+			if Engine.max_fps != target:
+				Engine.max_fps = target
+
+	if _wallpaper_mode:
+		# Occlusion throttle: shim writes /tmp/bagidea_occ when the window is
+		# fully hidden — drop to 2 fps so we consume near-zero GPU while invisible.
 		_occ_check_timer -= delta
 		if _occ_check_timer <= 0.0:
 			_occ_check_timer = 0.5
