@@ -1632,7 +1632,27 @@
     for (const [k, v] of Object.entries(DICT)) if (v[LANG]) TR[k] = v[LANG];
   }
   if (LANG !== "th") loadTR();
-  function tr(s) { if (LANG === "th" || !s) return s; return TR[String(s).trim()] || s; }
+  // 🇮🇹 Frasi con numeri: la chiave usa {n} al posto di ogni numero ("{n} งาน" → "{n} attività").
+  const _NUM = /\d+(?:[.,]\d+)*/g;
+  function trNum(key) {
+    if (!/\d/.test(key)) return null;
+    const nums = key.match(_NUM) || [];
+    const v = TR[key.replace(_NUM, "{n}")];
+    if (v == null) return null;
+    let i = 0;
+    return String(v).replace(/\{n\}/g, () => (nums[i++] ?? ""));
+  }
+  // Il thai non mette spazi tra le parole: un pezzo tradotto in mezzo ad altro testo
+  // ne ha bisogno, altrimenti "fino al"+"giorno" diventa "fino algiorno".
+  function padTh(node, key, val) {
+    if (!THAI.test(key)) return val;
+    const prev = node.previousSibling, next = node.nextSibling;
+    if (prev && /\S$/.test(prev.textContent || "") && !/^[\s)\].,:;·]/.test(val)) val = " " + val;
+    if (next && /^\S/.test(next.textContent || "") && !/\s$/.test(val) && !/^[)\].,:;]/.test(next.textContent)) val = val + " ";
+    return val;
+  }
+  function trKey(key) { return TR[key] || trNum(key); }
+  function tr(s) { if (LANG === "th" || !s) return s; const k = String(s).trim(), v = trKey(k); return v ? String(s).replace(k, v) : s; }
   const t = tr;  // back-compat for inline ${t(...)} uses
 
   // Dynamic content (chat, feed, agent names, thread titles, live counters)
@@ -1658,7 +1678,8 @@
       if (inNoI18n(n)) continue;
       const raw = n.nodeValue, key = raw.trim();
       if (!key) continue;
-      if (TR[key]) hits.push([n, raw.replace(key, TR[key])]);
+      const tv = trKey(key);
+      if (tv) { if (tv !== key) hits.push([n, padTh(n, key, raw.replace(key, tv))]); }
       else if (THAI.test(key)) _pending.add(key);
     }
     for (const [node, val] of hits) node.nodeValue = val;
@@ -1668,7 +1689,8 @@
       for (const a of ["placeholder", "title"]) {
       const v = el.getAttribute && el.getAttribute(a); if (!v) continue;
       const key = v.trim();
-      if (TR[key]) el.setAttribute(a, TR[key]);
+      const tv = trKey(key);
+      if (tv) { if (tv !== key) el.setAttribute(a, tv); }
       else if (THAI.test(key)) _pending.add(key);
       }
     }

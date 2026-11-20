@@ -5135,7 +5135,7 @@ const server = http.createServer((req, res) => {
       req.url.split("/").pop());
     fs.readFile(f, (e, data) => {
       if (e) { res.writeHead(404); res.end(); return; }
-      res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=3600" });
+      res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
       res.end(data);
     });
 
