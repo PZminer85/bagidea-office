@@ -27,6 +27,24 @@ static func npc_texture(index: int) -> ImageTexture:
 	_npc_cache[index] = tex
 	return tex
 
+const PORTRAIT_DIR := "res://assets/characters/portraits/"
+static var _portrait_cache := {}
+
+## Illustrated portrait for an avatar (portraits/npcN.jpg), downscaled for the
+## nameplate. null when the avatar has none (callers fall back to the sheet crop).
+static func portrait_texture(index: int, px := 56) -> ImageTexture:
+	if _portrait_cache.has(index):
+		return _portrait_cache[index]
+	var p := ProjectSettings.globalize_path(PORTRAIT_DIR + "npc%d.jpg" % index)
+	var tex: ImageTexture = null
+	if FileAccess.file_exists(p):
+		var img := Image.load_from_file(p)
+		if img:
+			img.resize(px, px, Image.INTERPOLATE_LANCZOS)
+			tex = ImageTexture.create_from_image(img)
+	_portrait_cache[index] = tex
+	return tex
+
 ## Composited custom character (256x256 idle-only: 4 frames x 4 directions).
 ## Tints multiply each layer, so identity colors survive into real art.
 static func custom_texture(skin: Color, hair: Color, shirt: Color, pants: Color) -> ImageTexture:

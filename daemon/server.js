@@ -5129,6 +5129,26 @@ const server = http.createServer((req, res) => {
       res.end(data);
     });
 
+  } else if (req.method === "GET" && req.url === "/char/portraits") {
+    // Which avatars have an illustrated portrait (assets/characters/portraits/npcN.jpg)
+    const dir = path.join(__dirname, "..", "godot", "assets", "characters", "portraits");
+    fs.readdir(dir, (e, files) => {
+      const list = e ? [] : files.map((f) => (/^npc([1-9]|1[0-2])\.jpg$/.exec(f) || [])[1])
+        .filter(Boolean).map(Number).sort((a, b) => a - b);
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache" });
+      res.end(JSON.stringify(list));
+    });
+
+  } else if (req.method === "GET" && /^\/char\/portrait([1-9]|1[0-2])(_full)?\.jpg$/.test(req.url)) {
+    // Illustrated portraits: square face (npcN.jpg) and waist-up (npcN_full.jpg)
+    const f = path.join(__dirname, "..", "godot", "assets", "characters", "portraits",
+      req.url.split("/").pop().replace("portrait", "npc"));
+    fs.readFile(f, (e, data) => {
+      if (e) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" });
+      res.end(data);
+    });
+
   } else if (req.method === "GET" && /^\/char\/npc([1-9]|1[0-2])\.png$/.test(req.url)) {
     // Character sheets for overlay portraits (404 → CSS falls back to initials)
     const f = path.join(__dirname, "..", "godot", "assets", "characters", "npc",

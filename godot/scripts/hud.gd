@@ -136,7 +136,9 @@ func register(agent: Node3D, display_name: String, role: String,
 		pic.custom_minimum_size = Vector2(28, 28)
 		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		# pixel crops stay crisp; illustrated portraits (wider than a 36px crop) smooth
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR if portrait.get_width() > 36 \
+			else CanvasItem.TEXTURE_FILTER_NEAREST
 		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		frame.add_child(pic)
 		hb.add_child(frame)

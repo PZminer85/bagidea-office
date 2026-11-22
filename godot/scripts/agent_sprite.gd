@@ -241,6 +241,10 @@ func apply_identity(p_name: String, p_role: String, p_npc: int) -> void:
 
 ## Portrait for the nameplate: the face region of the sheet's first cell.
 func _portrait() -> Texture2D:
+	if _mode == "npc":
+		var pt: ImageTexture = CharacterFactory.portrait_texture(npc_index)
+		if pt:
+			return pt
 	if _mode in ["npc", "custom"]:
 		var at := AtlasTexture.new()
 		at.atlas = texture

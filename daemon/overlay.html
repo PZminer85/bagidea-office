@@ -184,6 +184,10 @@
     /* idle cycle: 4 frames, 64px cell stride at 3x = 192px per step */
     animation: compIdle 1.1s steps(4) infinite;
   }
+  #companion .body.portrait {
+    width: 120px; height: 160px; animation: none; border-radius: 10px;
+    background-repeat: no-repeat; box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  }
   @keyframes compIdle {
     from { background-position-x: -48px; }
     to { background-position-x: -816px; }
@@ -1789,19 +1793,56 @@
   }
   // CSS sprite crops from the 256x512 sheet (cell 64): face (14,14,36,36)
   // keeps the face centered with chin + shoulders; standing body (16,6,32,54).
-  function face(el, id, size) {
+  // Illustrated portraits (assets/characters/portraits/npcN.jpg): avatars that
+  // have one show it instead of the pixel crop. The list arrives async, so
+  // every face drawn before it lands is redrawn from its data-face-* marks.
+  let PORTRAITS = new Set();
+  fetch("/char/portraits").then((r) => r.json()).then((a) => {
+    PORTRAITS = new Set(a);
+    document.querySelectorAll("[data-face-n]").forEach((el) =>
+      faceN(el, +el.dataset.faceN, +el.dataset.faceSize, +el.dataset.faceDy));
+    if (_compId) body(document.getElementById("compBody"), _compId);
+  }).catch(() => {});
+  function faceN(el, n, size, dy = -14) {
+    el.dataset.faceN = n; el.dataset.faceSize = size; el.dataset.faceDy = dy;
+    if (PORTRAITS.has(n)) {
+      el.style.backgroundImage = `url(/char/portrait${n}.jpg)`;
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+      el.style.imageRendering = "auto";
+      return;
+    }
     const k = size / 36;
-    el.style.backgroundImage = `url(/char/npc${npcOf(id)}.png)`;
+    el.style.backgroundImage = `url(/char/npc${n}.png)`;
     el.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-    el.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+    el.style.backgroundPosition = `${-14 * k}px ${dy * k}px`;
+    el.style.imageRendering = "";
+  }
+  function face(el, id, size) {
+    faceN(el, npcOf(id), size);
     el.classList.add("px");
     el.textContent = "";
   }
+  let _compId = null;
   function body(el, id) {
+    _compId = id;
+    const n = npcOf(id);
+    if (PORTRAITS.has(n)) {
+      // waist-up illustration in place of the animated pixel body
+      el.classList.add("portrait");
+      el.style.backgroundImage = `url(/char/portrait${n}_full.jpg)`;
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center top";
+      el.style.imageRendering = "auto";
+      return;
+    }
+    el.classList.remove("portrait");
+    el.style.imageRendering = "";
     const k = 3;
-    el.style.backgroundImage = `url(/char/npc${npcOf(id)}.png)`;
+    el.style.backgroundImage = `url(/char/npc${n}.png)`;
     el.style.backgroundSize = `${256 * k}px ${512 * k}px`;
     // x is driven by the compIdle keyframes (4-frame idle cycle)
+    el.style.backgroundPosition = "";
     el.style.backgroundPositionY = `${-6 * k}px`;
   }
 
@@ -5627,10 +5668,8 @@
     next.title = tr("agent ถัดไป") + " (" + k + "→) · " + tr("บันทึกก่อนเปลี่ยน");
     prev.setAttribute("aria-label", tr("agent ก่อนหน้า"));
     next.setAttribute("aria-label", tr("agent ถัดไป"));
-    const av = document.getElementById("eNavAv"), s = 22 / 36;   // the face, as the ID card crops it
-    av.style.backgroundImage = "url(/char/npc" + npcOf(info.id) + ".png)";
-    av.style.backgroundSize = 256 * s + "px " + 512 * s + "px";
-    av.style.backgroundPosition = -14 * s + "px " + -12 * s + "px";
+    const av = document.getElementById("eNavAv");   // the face, as the ID card crops it
+    faceN(av, npcOf(info.id), 22, -12);
     document.getElementById("eNavName").textContent = info.name || info.id;
     document.getElementById("eNavCount").textContent = info.n + " / " + info.N;
     document.getElementById("eNavDirty").title = tr("มีการแก้ไขที่ยังไม่บันทึก");
@@ -5928,10 +5967,7 @@
     for (let n = 1; n <= 12; n++) {
       const c = document.createElement("div");
       c.className = "av px" + (n === avatar ? " sel" : "");
-      const k = 58 / 36;
-      c.style.backgroundImage = `url(/char/npc${n}.png)`;
-      c.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-      c.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+      faceN(c, n, 58);
       c.onclick = () => {
         avatar = n;
         grid.querySelectorAll(".av").forEach((x) => x.classList.remove("sel"));
@@ -6303,10 +6339,7 @@
         </div>
       </div>`;
     const f = modalCard.querySelector("#cardFace");
-    const k = 108 / 36;
-    f.style.backgroundImage = `url(/char/npc${npcOf(id)}.png)`;
-    f.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-    f.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+    faceN(f, npcOf(id), 108);
     modalCard.querySelector("#cardEdit").onclick = () => ROSTER[id] ? openEditor(id) : null;
     modalCard.querySelector("#cardChat").onclick = () => { closeModal(); setTarget(id); };
   }
@@ -7659,10 +7692,7 @@
       f.style.borderRadius = "5px";
       f.style.backgroundColor = "#1c2740";
       f.style.outline = "1px solid rgba(255,255,255,0.15)";
-      const k = size / 36;
-      f.style.backgroundImage = `url(/char/npc${npcOf(id)}.png)`;
-      f.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-      f.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+      faceN(f, npcOf(id), size);
       f.title = `${nameOf(id)} — ${roleOf(id)}`;
       wrap.appendChild(f);
     }
@@ -8043,10 +8073,7 @@
       c.className = "chk";
       const f = document.createElement("div");
       f.className = "mini px";
-      const k = 18 / 36;
-      f.style.backgroundImage = `url(/char/npc${npcOf(id)}.png)`;
-      f.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-      f.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+      faceN(f, npcOf(id), 18);
       c.appendChild(f);
       c.appendChild(document.createTextNode(`${nameOf(id)} · ${roleOf(id)}`));
       c.onclick = () => { picked.has(id) ? picked.delete(id) : picked.add(id); c.classList.toggle("on"); };
@@ -8099,10 +8126,7 @@
       ic.style.top = ((p.z - MAP.z0) / MAP.d * 100) + "%";
       ic.style.outlineColor = isGhost ? "#a5b8ff" : (DOTS[p.state] || "#4ade80");
       if (isGhost) ic.style.opacity = "0.55";
-      const k = 26 / 36;
-      ic.style.backgroundImage = `url(/char/npc${npcOf(baseId)}.png)`;
-      ic.style.backgroundSize = `${256 * k}px ${512 * k}px`;
-      ic.style.backgroundPosition = `${-14 * k}px ${-14 * k}px`;
+      faceN(ic, npcOf(baseId), 26);
       const label = isGhost ? `👻 ${nameOf(baseId)}` : nameOf(p.id);
       ic.innerHTML = `<div class="tag">${label}</div>`;
       ic.title = `${label} — ${p.state}`;
