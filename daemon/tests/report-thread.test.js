@@ -12,10 +12,10 @@ const SERVER = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8").
 const block = (from, to) => { const i = SERVER.indexOf(from); assert.ok(i > -1, "not found: " + from.slice(0, 40)); const j = SERVER.indexOf(to, i + from.length); return SERVER.slice(i, j > -1 ? j : i + 6000); };
 
 test("the delegate filter resolves the thread at dispatch time, never from a value frozen at build time", () => {
-  const filter = block("function makeDelegateFilter(depth, session, onHit) {", "// Optional QA gate");
+  const filter = block("function makeDelegateFilter(depth, session, onHit, mgr = \"main\") {", "// Optional QA gate");
   assert.match(filter, /const sessionNow = \(\) => \(typeof session === "function"/, "a getter is accepted");
   assert.ok(!/, depth, session\)/.test(filter), "no hand-off inside the filter passes the frozen value");
-  for (const s of ['reportToMain("codex", text, !!r.ok, depth, sessionNow())', "verifyThenReport(t, inst, out, ok, depth, sessionNow(), proj)", "false, depth, sessionNow());"])
+  for (const s of ['reportToMain("codex", text, !!r.ok, depth, sessionNow())', "verifyThenReport(t, inst, out, ok, depth, sessionNow(), proj, mgr)", "false, depth, sessionNow());"])
     assert.ok(filter.includes(s), "filter should contain: " + s);
 });
 

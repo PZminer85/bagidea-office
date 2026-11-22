@@ -582,8 +582,16 @@ function brainRoute(agentId, override) {
   const a = agentId && reg.agents ? reg.agents[agentId] : null;
   const provider = (override && override.provider) || (a && a.provider) || reg.defaultProvider || "claude";
   const model = (override && override.model) || (a && a.model) || "";
-  return providers.resolve(provider, model, reg, { proxyBase: "http://127.0.0.1:" + OEP_PORT });
+  const route = providers.resolve(provider, model, reg, { proxyBase: "http://127.0.0.1:" + OEP_PORT });
+  // Paolo: per-agent effort (low…max) rides into `claude --effort`. Claude brain only —
+  // other backends don't know the flag — and never on the failover brain.
+  const eff = a && EFFORT_LEVELS.includes(a.effort) ? a.effort : "";
+  if (eff && provider === "claude" && !(override && override.provider) && route.ok !== false) {
+    route.modelArgs = [...(route.modelArgs || []), "--effort", eff];
+  }
+  return route;
 }
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
 // How many sustained api_retry hits (all 5xx) before the OPT-IN failover kicks in.
 // The claude CLI itself retries ~10× over ~2 min; we cut in earlier so a dead brain
@@ -3027,15 +3035,53 @@ function teamList() {
   const brainOf = (a) => a.model || a.provider || "claude";
   // Include the brain in the cache key so a model change refreshes the list.
   const key = ids.map((id) => { const a = reg.agents[id];
-    return `${id}:${a.name}:${a.role}:${brainOf(a)}`; }).join("|");
+    return `${id}:${a.name}:${a.role}:${brainOf(a)}:${managerOf(id) || ""}:${managesList(id).join(",")}`; }).join("|");
   if (_teamListKey === key && _teamListCache != null) return _teamListCache;
   _teamListKey = key;
   // Show each teammate's fixed brain so the Director can route a task to the agent
   // whose model fits — without changing anyone's model.
   _teamListCache = ids.map((id) => { const a = reg.agents[id];
-    return `- ${id}: ${a.name}, ${a.role} · 🧠 ${brainOf(a)}`; })
+    const lead = managerOf(id), team = managesList(id);
+    return `- ${id}: ${a.name}, ${a.role} · 🧠 ${brainOf(a)}` +
+      (team.length ? ` · leads a team: ${team.join(", ")}` : "") +
+      (lead ? ` · in the team of ${(reg.agents[lead] || {}).name || lead} (${lead})` : ""); })
     .join("\n") || "(no other staff yet)";
   return _teamListCache;
+}
+
+// 👥 Paolo: team leads. A teammate with `manages: [ids]` in the registry leads its own
+// sub-team: it can DELEGATE to those ids only, their results come back to IT (not to
+// the Director), and its own summary then goes up to whoever handed it the work.
+function managesList(mgr) {
+  const a = reg.agents && reg.agents[mgr];
+  if (!a || !Array.isArray(a.manages) || mgr === "main" || mgr === "ceo") return [];
+  return a.manages.filter((id) => id !== mgr && id !== "main" && id !== "ceo" && reg.agents[id]);
+}
+function isManager(id) { return managesList(id).length > 0; }
+function managerOf(id) {
+  return Object.keys(reg.agents || {}).find((m) => managesList(m).includes(id)) || null;
+}
+function canDelegate(mgr, tgt) {
+  if (!tgt || tgt === "ceo" || tgt === "main" || tgt === mgr) return false;
+  return mgr === "main" ? true : managesList(mgr).includes(tgt);
+}
+// Who handed the current work to a team lead, so its final summary goes back up.
+const mgrParent = new Map();
+function managerNote(mgr) {
+  const team = managesList(mgr).map((id) => { const a = reg.agents[id];
+    return `- ${id}: ${a.name}, ${a.role}`; }).join("\n");
+  return `
+
+<team-lead-capability>
+You lead your own team. Your team members:
+${team}
+To hand work to one of them, include a line EXACTLY in this format:
+DELEGATE: <agent_id> :: <clear, self-contained instruction>
+One line per assignment — dispatched automatically; each result is reported back to YOU, so you can
+check it, follow up or send it back for fixes. Prose alone dispatches NOTHING — only DELEGATE lines do.
+You can delegate ONLY to the members listed above. When all the work is done, write a short summary
+of the result: it goes to whoever gave you the work.
+</team-lead-capability>`;
 }
 
 // The Director can delegate from ANY conversation — talking to him directly
@@ -3274,7 +3320,7 @@ function autoContinue(agent, project, keyRef, next, isDirector, dele) {
 
 // DELEGATE:-line parser shared by the CEO order and every report-back turn.
 // onHit fires per dispatched assignment ("did he hand off more work?").
-function makeDelegateFilter(depth, session, onHit) {
+function makeDelegateFilter(depth, session, onHit, mgr = "main") {
   // `session` may be a string or a GETTER. On the owner-facing paths the filter is
   // built before the run starts, when a fresh thread has no key yet; a value frozen
   // then is `undefined`, and the report-back 4.5 s later resolves it as "the latest
@@ -3289,7 +3335,7 @@ function makeDelegateFilter(depth, session, onHit) {
       // and registers a project HIMSELF, daemon-side, before any DELEGATE in
       // the same reply dispatches. This is how new work gets a real home:
       // the assignee then runs INSIDE that directory from its first message.
-      const pj = ln.match(/^\s*PROJECT:\s*(.+?)\s*@\s*(.+?)\s*$/);
+      const pj = mgr === "main" && ln.match(/^\s*PROJECT:\s*(.+?)\s*@\s*(.+?)\s*$/);
       if (pj) {
         const nm = pj[1].trim(), loc = pj[2].trim();
         try {
@@ -3308,7 +3354,7 @@ function makeDelegateFilter(depth, session, onHit) {
       const m = ln.match(/^\s*DELEGATE:\s*([^:@]+?)(?:\s*@\s*([^:]+?))?\s*::\s*(.+)$/);
       // 🧑‍💻 DELEGATE: codex @ <project> :: <task> — the office runs Codex inside that
       // project and reports back like a teammate's result. Only when Codex is here.
-      if (m && /^codex$/i.test(m[1].trim()) && codex.detect().installed && codex.settings().enabled) {
+      if (m && mgr === "main" && /^codex$/i.test(m[1].trim()) && codex.detect().installed && codex.settings().enabled) {
         const inst = m[3].trim(), projName = (m[2] || "").trim();
         if (onHit) onHit();
         notifyChannels(`🧑‍💻 → Codex${projName ? " @ " + projName : ""}: ${inst.slice(0, 200)}`);
@@ -3332,8 +3378,8 @@ function makeDelegateFilter(depth, session, onHit) {
           : Object.keys(reg.agents).find((id) =>
               (reg.agents[id].name || "").toLowerCase() === key.toLowerCase());
       }
-      if (tgt && tgt !== "ceo" && tgt !== "main") {
-        broadcast({ type: "task.delegated", agent: "main", target: tgt });
+      if (tgt && canDelegate(mgr, tgt)) {
+        broadcast({ type: "task.delegated", agent: mgr, target: tgt });
         notifyChannels(`🕊 → ${(reg.agents[tgt] && reg.agents[tgt].name) || tgt}: ${String(m[3] || "").trim().slice(0, 200)}`);
         if (onHit) onHit();
         const inst = m[3];
@@ -3354,7 +3400,7 @@ function makeDelegateFilter(depth, session, onHit) {
           // agent must NOT enter it — report back so the Director re-plans
           // (and the two never collide inside one working tree).
           if (proj && projWin[proj]) {
-            reportToMain(t, `The owner currently has project "${projName || proj}" open in a window — ` +
+            reportBack(mgr, t, `The owner currently has project "${projName || proj}" open in a window — ` +
               `it cannot be entered right now; wait until the owner closes that window.`, false, depth, sessionNow());
             return;
           }
@@ -3365,7 +3411,12 @@ function makeDelegateFilter(depth, session, onHit) {
           const tl = sess[t] || [];
           const te = tl.length ? tl.reduce((a, b) => (a.ts > b.ts ? a : b)) : null;
           // Carry the autonomy mandate on both the first run AND any auto-resume.
-          const dinst = inst + DELEGATE_NOTE;
+          // 👥 A team lead gets its own DELEGATE power (its team only) on this run; when it
+          // hands work on, its report goes up only after its team has finished (reportBack).
+          const lead = isManager(t);
+          const tKey = { key: "" }, tDele = { hit: false };
+          if (lead) mgrParent.set(t, { mgr, session: sessionNow() });
+          const dinst = inst + DELEGATE_NOTE + (lead ? managerNote(t) : "");
           runClaude(t, dinst, {
             project: proj,
             // No project → a FRESH workspace thread so the agent never inherits a
@@ -3373,10 +3424,18 @@ function makeDelegateFilter(depth, session, onHit) {
             // new thread only when the agent's latest one lives elsewhere.
             session: proj ? ((!te || te.proj !== proj) ? "new" : undefined) : "new",
             resumable: true, resumePrompt: dinst,   // delegated work auto-resumes after a limit/restart
+            ...(lead ? {
+              filterText: (txt) => stripStatus(makeDelegateFilter(depth + 1, () => tKey.key,
+                () => { tDele.hit = true; }, t)(txt)),
+              onEntry: (k) => { tKey.key = k; },
+            } : {}),
             onDone: (out, ok) => {
               // Never overwrite a waiting/todo the agent set on purpose (reports owed).
               if (card) { try { tasks.settleDelegation(card.id, ok); } catch {} }
-              verifyThenReport(t, inst, out, ok, depth, sessionNow(), proj);
+              // The lead passed the work on: its summary goes up when the team reports.
+              if (lead && tDele.hit && ok) return;
+              if (lead) mgrParent.delete(t);
+              verifyThenReport(t, inst, out, ok, depth, sessionNow(), proj, mgr);
             },
           });
         }, 4500);
@@ -3392,10 +3451,10 @@ function makeDelegateFilter(depth, session, onHit) {
 // fresh eyes — checks it's genuinely done. On real problems it hands the work back to
 // the assignee ONCE (resuming their thread), then reports. Never recurses; never blocks
 // (any reviewer failure ships the original result).
-function verifyThenReport(fromId, task, out, ok, depth, session, proj) {
+function verifyThenReport(fromId, task, out, ok, depth, session, proj, mgr = "main") {
   // Eco mode skips the QA double-pass — it re-runs a whole review turn per
   // delegated task, the single biggest optional token cost in the office.
-  if (!reg.verifyDelegated || reg.ecoMode || !ok) return reportToMain(fromId, out, ok, depth, session);
+  if (!reg.verifyDelegated || reg.ecoMode || !ok) return reportBack(mgr, fromId, out, ok, depth, session);
   const a = reg.agents[fromId] || { name: fromId };
   // Snapshot the assignee's WORK thread now — before the review run spawns a new one.
   const wl = sess[fromId] || [];
@@ -3415,7 +3474,7 @@ function verifyThenReport(fromId, task, out, ok, depth, session, proj) {
     onDone: (verdict, vok) => {
       const txt = String(verdict || "");
       const flagged = vok && /(^|\n)\s*ISSUES\s*:/i.test(txt) && !/^\s*APPROVED\s*$/im.test(txt);
-      if (!flagged) return reportToMain(fromId, out, ok, depth, session);  // approved / inconclusive → ship
+      if (!flagged) return reportBack(mgr, fromId, out, ok, depth, session);  // approved / inconclusive → ship
       // One fix-back loop: hand the findings to the assignee on their own thread, then
       // report the revised result (no second review — bounded).
       const fixPrompt =
@@ -3425,9 +3484,70 @@ function verifyThenReport(fromId, task, out, ok, depth, session, proj) {
         project: proj, session: workSess, noSub: true,
         logPrompt: `🛠 ${a.name} fixes the work per review`,
         onDone: (out2, ok2) =>
-          reportToMain(fromId, `${out2}\n\n(reviewed + fixed per review)`, ok2, depth, session),
+          reportBack(mgr, fromId, `${out2}\n\n(reviewed + fixed per review)`, ok2, depth, session),
       });
     },
+  });
+}
+
+// 👥 Results go back to whoever delegated: the Director, or a team lead.
+function reportBack(mgr, fromId, text, ok, depth, session) {
+  if (!mgr || mgr === "main" || !reg.agents[mgr]) return reportToMain(fromId, text, ok, depth, session);
+  return reportToManager(mgr, fromId, text, ok, depth, session);
+}
+
+// A team lead's report-back turn: same round trip as the Director's, on the lead's
+// own thread and serialized per lead. When it hands nothing further on, its text is
+// the team's summary: it goes up to whoever gave the lead the work (if anyone), else
+// it stays in the lead's chat and rides out to the channels.
+const mgrQueues = new Map();
+function queueManagerTurn(mgr, start) {
+  const q = mgrQueues.get(mgr) || { busy: false, items: [] };
+  mgrQueues.set(mgr, q);
+  q.items.push(start);
+  const pump = () => {
+    if (q.busy || !q.items.length) return;
+    q.busy = true;
+    q.items.shift()(() => { q.busy = false; pump(); });
+  };
+  pump();
+}
+function reportToManager(mgr, fromId, text, ok, depth, session) {
+  const a = reg.agents[fromId] || { name: fromId };
+  const wrapped =
+    `Report back from your team member ${a.name} (${fromId})` +
+    (ok ? "" : " — THE TASK FAILED") + `:\n` +
+    `"""${String(text || "(no result)").slice(0, 6000)}"""\n\n` +
+    (depth < 2
+      ? `If they asked you a question, something is missing or the work needs fixing, follow up ` +
+        `with a line: DELEGATE: ${fromId} :: <your answer or next instruction> ` +
+        `(exact format — it resumes their session with full context). ` +
+        `If the work is complete, write the final summary of the result: clear, concrete, ` +
+        `in the language of the original order.`
+      : `Write the final summary of the result now — clear, concrete, in the language of ` +
+        `the original order. Do not delegate further.`);
+  queueManagerTurn(mgr, (release) => {
+    const dele = { hit: false };
+    const keyRef = { key: session || "" };
+    const df = depth < 2 ? makeDelegateFilter(depth + 1, () => keyRef.key, () => { dele.hit = true; }, mgr) : null;
+    runClaude(mgr, wrapped + autoNote(), {
+      session,
+      noSub: true,
+      logPrompt: `📨 Report from ${a.name}`,
+      filterText: df ? (t) => stripStatus(df(t)) : (t) => stripStatus(t),
+      onEntry: (k) => { keyRef.key = k; },
+      onDone: (finalText, fOk) => {
+        release();
+        if (dele.hit || !fOk) return;
+        const up = mgrParent.get(mgr);
+        if (up) {
+          mgrParent.delete(mgr);
+          reportBack(up.mgr, mgr, stripStatus(finalText), fOk, Math.min(depth, 1), up.session);
+        } else {
+          notifyChannels(finalText && "📨 " + stripStatus(finalText));
+        }
+      },
+    });
   });
 }
 
@@ -5232,10 +5352,16 @@ const server = http.createServer((req, res) => {
                   filterText: (t) => stripStatus(t),
                   onEntry: (k) => { keyRef.key = k; autoRounds.delete(k); },
                   onDone: reply })
-              : runClaude(agent, prompt + autoNote(), { session, project, logPrompt: origPrompt, qvec,
+              : runClaude(agent, prompt + (isManager(agent) ? managerNote(agent) : "") + autoNote(), { session, project, logPrompt: origPrompt, qvec,
                 resumable: true, resumePrompt: origPrompt,  // a member's direct task auto-resumes
                 maxOutputTokens,
-                filterText: (t) => stripStatus(t),
+                // 👥 Talking straight to a team lead gives it its team's DELEGATE power;
+                // the owner gave the work, so the summary stays in this chat.
+                filterText: isManager(agent)
+                  ? (() => { mgrParent.delete(agent);
+                      const mdf = makeDelegateFilter(0, () => keyRef.key, () => { dele.hit = true; }, agent);
+                      return (t) => stripStatus(mdf(t)); })()
+                  : (t) => stripStatus(t),
                 onEntry: (k) => { keyRef.key = k; autoRounds.delete(k); },
                 onDone: autoContinue(agent, project, keyRef, reply, false) });
         if (!wait) {
@@ -5543,6 +5669,13 @@ const server = http.createServer((req, res) => {
           voice: String(p.voice !== undefined ? p.voice : cur.voice || "").slice(0, 20),
           skills: Array.isArray(p.skills) ? p.skills : cur.skills || [],
           tools: Array.isArray(p.tools) ? p.tools : cur.tools || [],
+          // Paolo: per-agent effort (claude --effort) and the team this agent leads.
+          effort: p.effort !== undefined
+            ? (EFFORT_LEVELS.includes(p.effort) ? p.effort : "")
+            : (cur.effort || ""),
+          manages: Array.isArray(p.manages)
+            ? p.manages.map(String).filter((x) => x && x !== id && x !== "main" && x !== "ceo").slice(0, 20)
+            : (cur.manages || []),
           // 🧠 swappable brain: which backend/model this agent runs on (default Claude).
           // Accept both built-in PROVIDERS and custom ones from providerConfig.
           provider: (providers.PROVIDERS[p.provider] || (reg.providerConfig && reg.providerConfig[p.provider]))
