@@ -90,6 +90,7 @@ var _t := 0.0
 var _bob_speed := 2.2
 var _walking := false
 var _mode := "procedural"   # "npc" | "custom" | "procedural"
+var _px := 1.0              # sheet texels per 64px-cell texel (2.0 for 128px cells)
 var _has_walk_rows := false
 var _dir := DIR_DOWN
 var _anim_t := 0.0
@@ -262,8 +263,10 @@ func _setup_visual() -> void:
 			_mode = "npc"
 			_has_walk_rows = true
 			# Char body spans rows 10..63 of the 64px cell (54 px tall, feet on
-			# the cell's bottom edge): 0.032 → ~1.7 m tall.
-			pixel_size = 0.032
+			# the cell's bottom edge): 0.032 → ~1.7 m tall. Hi-res sheets
+			# (e.g. 512x1024, 128px cells) keep the same world size.
+			_px = tex.get_width() / 256.0
+			pixel_size = 0.032 / _px
 			# Full billboard: the sprite plane faces the camera even at the
 			# high pitch (FIXED_Y reads paper-thin from a -45° camera).
 			billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -276,6 +279,7 @@ func _setup_visual() -> void:
 			vframes = 4
 			_mode = "custom"
 			_has_walk_rows = false
+			_px = 1.0
 			pixel_size = 0.032
 			billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			return
@@ -360,7 +364,7 @@ func _process(delta: float) -> void:
 		offset.y = sin(_t) * 0.15
 	else:
 		# Ghosts hover — a visible float on top of the sheet's baked feet line.
-		offset.y = 4.0 + (sin(_t) * 2.6 if is_ghost else 0.0)
+		offset.y = (4.0 + (sin(_t) * 2.6 if is_ghost else 0.0)) * _px
 		offset.x = 0.0
 
 	match _mode:
