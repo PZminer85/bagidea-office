@@ -197,6 +197,61 @@ func _fx(a: Dictionary, name: String, loops := 1) -> void:
 	if hud and not info.is_empty():
 		hud.fx(a.node, info[0], info[1], loops)
 
+# ---------------------------------------------------------------- click to chat
+
+## Left click on a character → the overlay opens that agent's chat
+## (POST /event ui.select, relayed to every overlay by the daemon).
+func _unhandled_input(e: InputEvent) -> void:
+	if not (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT):
+		return
+	var id := _agent_at(e.position)
+	if id == "":
+		return
+	get_viewport().set_input_as_handled()
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(_r, _c, _h, _b): req.queue_free())
+	req.request("http://127.0.0.1:8787/event", ["content-type: application/json"],
+		HTTPClient.METHOD_POST, JSON.stringify({"type": "ui.select", "agent": id}))
+
+## The agent whose on-screen sprite contains `screen` (nearest to the camera wins).
+func _agent_at(screen: Vector2) -> String:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return ""
+	var nodes := {}
+	for id in agents:
+		var a: Dictionary = agents[id]
+		if a.has("node") and is_instance_valid(a.node):
+			nodes[id] = a.node
+	for gid in ghosts:
+		var g: Dictionary = ghosts[gid]
+		if g.has("node") and is_instance_valid(g.node):
+			nodes[String(gid).split("#")[0]] = g.node
+	if is_instance_valid(ceo):
+		nodes["ceo"] = ceo
+	var best := ""
+	var best_d := INF
+	for id in nodes:
+		var n: Sprite3D = nodes[id]
+		if not n.is_visible_in_tree() or cam.is_position_behind(n.global_position):
+			continue
+		# Billboard quad: build its corners on the camera's own axes; the
+		# cell is wider than the body, so only its middle half counts.
+		var box := n.get_aabb()
+		var c: Vector3 = n.global_position + Vector3(0, box.get_center().y, 0)
+		var hx: Vector3 = cam.global_basis.x * box.size.x * 0.25
+		var hy: Vector3 = cam.global_basis.y * box.size.y * 0.5
+		var r := Rect2(cam.unproject_position(c - hx - hy), Vector2.ZERO)
+		for p in [c + hx - hy, c - hx + hy, c + hx + hy]:
+			r = r.expand(cam.unproject_position(p))
+		if r.has_point(screen):
+			var d := cam.global_position.distance_to(n.global_position)
+			if d < best_d:
+				best_d = d
+				best = id
+	return best
+
 # ---------------------------------------------------------------- events
 
 func handle(evt: Dictionary) -> void:

@@ -476,10 +476,15 @@ func _ready() -> void:
 	_build_geometry()
 	_build_ghost_deck()
 	_build_garden_lamps()
-	_build_sky_life()
+	# Clouds + bird flocks are off unless BAGIDEA_SKY_FX=1 (they crossed the
+	# office and distracted from the agents).
+	var sky_fx := OS.get_environment("BAGIDEA_SKY_FX") == "1"
+	if sky_fx:
+		_build_sky_life()
 	_build_ambient_particles()
 	_build_clock()
-	_bird_loop()
+	if sky_fx:
+		_bird_loop()
 
 # ---------------------------------------------------------------- ghost deck
 ## Floating glass platform above the east wing — the SUB OPS office where

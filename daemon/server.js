@@ -7734,7 +7734,7 @@ end tell`;
         // that IS the Director: map them onto main (no ghost duplicate).
         if (evt.agent === "claude") evt.agent = "main";
         // Transient UI state (visibility, monitor count) must never replay.
-        broadcast(evt, !["ui.visibility", "ui.monitors", "ui.monitor"].includes(evt.type));
+        broadcast(evt, !["ui.visibility", "ui.monitors", "ui.monitor", "ui.select"].includes(evt.type));
         res.writeHead(200);
         res.end("ok");
       } catch {

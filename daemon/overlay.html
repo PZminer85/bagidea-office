@@ -8659,6 +8659,11 @@
       if (im) im.src = "/map/bg?t=" + Date.now();
       return;
     }
+    if (ev.type === "ui.select") {   // a character was clicked in the 3D office
+      const id = String(ev.agent || "").split("#")[0];
+      if (id === "ceo" || ROSTER[id]) setTarget(id);
+      return;
+    }
     if (ev.type === "ui.monitors") {  // the shell detected the real screen count
       monCount = Math.max(1, Number(ev.count) || 1);
       try { refreshDispVisibility(); renderDispMenu(); } catch {}
