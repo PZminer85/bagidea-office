@@ -63,8 +63,10 @@ test("server.js: canned banter + mood lines are keyed by office language", () =>
   const src = read("server.js").join("\n");
   assert.match(src, /const BANTER = \{\s*th: \[/);
   assert.match(src, /en: \[\s*\["\{a\}: The cat/);
-  assert.match(src, /BANTER\[reg\.lang === "th" \? "th" : "en"\]/);
-  assert.match(src, /MOOD_LINES\[reg\.lang === "th" \? "th" : "en"\]/);
+  assert.match(src, /en: \[\s*\["\{a\}: The cat[\s\S]*?\],\s*it: \[\s*\["\{a\}: Il gatto/);
+  assert.match(src, /BANTER\[reg\.lang\] \|\| BANTER\.en/);
+  assert.match(src, /MOOD_LINES\[reg\.lang\] \|\| MOOD_LINES\.en/);
+  assert.match(src, /it: \["Oggi ho una bella energia/);
 });
 
 test("constants.js: the persona-draft prompt lists tools in English", () => {

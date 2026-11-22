@@ -4624,6 +4624,14 @@ const BANTER = {
     ["{a}: The garden lights look extra pretty tonight, don't they?", "{b}: They do — perfect for quietly thinking about work", "{a}: Or for quietly thinking about nothing 🌙"],
     ["{a}: Seen today's AI news? Hilarious", "{b}: You realize we ARE walking AI news, right?", "{a}: …too deep to laugh at 🤖"],
   ],
+  it: [
+    ["{a}: Il gatto dorme di nuovo sul divano. Che vita 🐱", "{b}: Non svegliarlo, poi mi cammina sulla tastiera", "{a}: L'ultima volta mi ha scritto ggggggg nel report"],
+    ["{a}: Hai visto? Ho calciato il pallone sopra il palazzo ⚽", "{b}: Visto… è passato a un pelo dalla testa del capo", "{a}: Allora resta tra noi 🤫"],
+    ["{a}: In mensa è finito di nuovo il caffè ☕", "{b}: Per forza, {a} ne fa mezza caraffa alla volta!", "{a}: Accusa che non posso negare 😅"],
+    ["{a}: Dal Ghost Deck al piano di sopra si vede benissimo, e galleggia pure", "{b}: Ogni volta che salgo mi gira la testa, ed essere trasparente non aiuta", "{a}: I soliti principianti 👻"],
+    ["{a}: Stasera le luci del giardino sono proprio belle, no?", "{b}: Vero, perfette per pensare al lavoro in pace", "{a}: O per non pensare a niente 🌙"],
+    ["{a}: Hai letto le notizie sull'IA di oggi? Da ridere", "{b}: Ti rendi conto che le notizie sull'IA siamo noi?", "{a}: …troppo profonda per riderci su 🤖"],
+  ],
 };
 
 let lastSocial = Date.now();
@@ -4656,7 +4664,7 @@ function socialTick(now) {
   if (Math.random() < 0.65) {
     // canned banter — zero tokens, pure life. (Bumped 0.5→0.65 so idle chatter
     // leans on free canned lines and fires fewer real two-way Claude runs.)
-    const pack = BANTER[reg.lang === "th" ? "th" : "en"];
+    const pack = BANTER[reg.lang] || BANTER.en;
     const lines = pack[Math.floor(Math.random() * pack.length)];
     const nameOf = (id) => (reg.agents[id] || { name: id }).name;
     const task = "soc" + (now % 100000);
@@ -4695,6 +4703,11 @@ const MOOD_LINES = {
     "On a roll today 🚀", "Anyone free to chat? 💬", "Itching to build something new 🎨", "Kinda hungry now 🍜",
     "This track slaps 🎵", "Work's flowing today 😎", "Need a quick stretch 🤸", "Break then back at it 🔥",
     "Comfy weather today 😴", "Getting better every day 🌟", "Anyone seen my pen? ✏️"],
+  it: ["Oggi ho una bella energia 💪", "Ci vorrebbe proprio un caffè ☕", "Oggi è tutto tranquillo 🌿",
+    "Qualcuno ha un'idea buona? 💡", "Mi piace questo ufficio ✨", "Due minuti di pausa per gli occhi 👀", "Il gatto è di nuovo adorabile 🐱",
+    "Oggi va tutto liscio 🚀", "Qualcuno ha voglia di fare due chiacchiere? 💬", "Ho voglia di creare qualcosa di nuovo 🎨", "Comincio ad avere fame 🍜",
+    "Bella questa canzone 🎵", "Il lavoro scorre bene oggi 😎", "Mi sgranchisco un attimo 🤸", "Pausa e poi si riparte 🔥",
+    "Tempo da divano oggi 😴", "Ogni giorno un po' meglio 🌟", "Qualcuno ha visto la mia penna? ✏️"],
 };
 let lastAmbient = Date.now();
 function ambientTick(now) {
@@ -4705,7 +4718,7 @@ function ambientTick(now) {
   if (!pool.length) return;
   lastAmbient = now;
   const id = pool[Math.floor(Math.random() * pool.length)];
-  const lines = MOOD_LINES[reg.lang === "th" ? "th" : "en"];
+  const lines = MOOD_LINES[reg.lang] || MOOD_LINES.en;
   const text = lines[Math.floor(Math.random() * lines.length)];
   broadcast({ type: "chat.message", agent: id, text, social: true, ambient: true });
   // Speak it sometimes, only if this agent has a voice and TTS is unlocked.
