@@ -476,12 +476,13 @@ func _ready() -> void:
 	_build_geometry()
 	_build_ghost_deck()
 	_build_garden_lamps()
-	# Clouds + bird flocks are off unless BAGIDEA_SKY_FX=1 (they crossed the
-	# office and distracted from the agents).
+	# Clouds, bird flocks and drifting motes are off unless BAGIDEA_SKY_FX=1
+	# (they crossed the office and distracted from the agents).
 	var sky_fx := OS.get_environment("BAGIDEA_SKY_FX") == "1"
 	if sky_fx:
 		_build_sky_life()
-	_build_ambient_particles()
+	if sky_fx:
+		_build_ambient_particles()   # drifting motes — off with the clouds
 	_build_clock()
 	if sky_fx:
 		_bird_loop()

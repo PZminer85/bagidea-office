@@ -110,6 +110,7 @@ enum UserEvent {
     DragOrb,
     DragOverlay,
     HideOverlay,
+    ShowOverlay(String), // a character was clicked in the 3D office → bring the chat up on that agent (never hides)
     MiniToggle,
     LargeToggle, // big resizable window (min size = FULL) for reading / real work
     ResizeDrag(String), // large mode: JS edge-zones start an OS resize drag (the
@@ -181,6 +182,7 @@ const ORB_HTML: &str = r#"<!doctype html>
         try {
           const e = JSON.parse(m.data);
           if (e.replay) return;
+          if (e.type === 'ui.select' && e.agent && window.ipc) { window.ipc.postMessage('show:' + String(e.agent).split('#')[0]); return; }
           if (e.type === 'task.started') busy++;
           else if (e.type === 'task.completed' || e.type === 'task.failed') busy = Math.max(0, busy - 1);
           document.body.classList.toggle('busy', busy > 0);
@@ -1383,6 +1385,7 @@ mod platform {
         let f: windows_sys::Win32::UI::WindowsAndMessaging::WNDPROC = std::mem::transmute(prev);
         CallWindowProcW(f, hwnd, msg, wp, lp)
     }
+    pub fn join_all_spaces(_w: &Window) {}
     pub fn suppress_nc(window: &Window) {
         use std::sync::atomic::Ordering;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -2012,6 +2015,16 @@ mod platform {
     pub fn set_no_activate(_window: &Window) {}
     pub fn raise_topmost(window: &Window) { window.set_always_on_top(false); window.set_always_on_top(true); }
     pub fn suppress_nc(_window: &Window) {}
+    /// Let a floating window appear in every Space, including over an app in
+    /// native full screen (the 3D office): canJoinAllSpaces | fullScreenAuxiliary.
+    pub fn join_all_spaces(window: &Window) {
+        unsafe {
+            let w = window.ns_window() as *mut AnyObject;
+            if !w.is_null() {
+                let _: () = msg_send![w, setCollectionBehavior: (1u64 << 0) | (1u64 << 8)];
+            }
+        }
+    }
 
     fn round_corners(window: &Window, radius: f64) {
         unsafe {
@@ -2292,6 +2305,7 @@ mod platform {
     pub fn set_no_activate(_w: &Window) {}
     pub fn raise_topmost(window: &Window) { window.set_always_on_top(false); window.set_always_on_top(true); }
     pub fn suppress_nc(_w: &Window) {}
+    pub fn join_all_spaces(_w: &Window) {}
     pub fn region_round(_w: &Window, _a: f64, _b: f64, _r: f64) {}
     pub fn region_circle(_w: &Window, _d: f64) {}
     pub fn set_feed_alpha(_w: &Window, _a: Option<u8>) {}
@@ -2587,6 +2601,7 @@ fn main() {
         &event_loop, "BagIdea Office", FULL.0, FULL.1, PARK.0, PARK.1, app_icon(), false, true,
     );
     overlay.set_outer_position(LogicalPosition::new(PARK.0, PARK.1));
+    platform::join_all_spaces(&overlay);   // shows over the office in full screen too
     let overlay_id = overlay.id();
     let p_overlay = proxy.clone();
     // If the daemon cannot be reached, say so IN the window instead of showing an
@@ -2604,6 +2619,7 @@ fn main() {
                 let _ = match req.body().as_str() {
                     "drag-overlay" => p_overlay.send_event(UserEvent::DragOverlay),
                     "hide" => p_overlay.send_event(UserEvent::HideOverlay),
+                    "show" => p_overlay.send_event(UserEvent::ShowOverlay(String::new())),
                     "mini" => p_overlay.send_event(UserEvent::MiniToggle),
                     "large" => p_overlay.send_event(UserEvent::LargeToggle),
                     "feed-hover:1" => p_overlay.send_event(UserEvent::FeedHover(true)),
@@ -2644,6 +2660,7 @@ fn main() {
     );
     platform::set_no_activate(&orb);
     platform::suppress_nc(&orb);   // swallow non-client paint → no white caption bar on click
+    platform::join_all_spaces(&orb);
     let orb_id = orb.id();
     let p_orb = proxy.clone();
     let _orb_view = WebViewBuilder::new()
@@ -2654,6 +2671,14 @@ fn main() {
                 "toggle" => p_orb.send_event(UserEvent::Toggle),
                 "drag-orb" => p_orb.send_event(UserEvent::DragOrb),
                 "mode" => p_orb.send_event(UserEvent::FeedToggle),
+                // ui.select heard by the orb (always on screen, never throttled):
+                // "show:<agent id>" — only id-safe characters survive.
+                s if s.starts_with("show:") => {
+                    let id: String = s[5..].chars()
+                        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+                        .take(40).collect();
+                    p_orb.send_event(UserEvent::ShowOverlay(id))
+                }
                 _ => Ok(()),
             };
         })
@@ -2917,6 +2942,18 @@ fn main() {
                     splash.set_visible(false);
                 }
                 UserEvent::Toggle => do_toggle(feed, large),
+                UserEvent::ShowOverlay(id) => {
+                    let hidden = overlay.outer_position().map(|p| p.x < -2000).unwrap_or(true);
+                    if hidden && !browser_chat() {
+                        do_toggle(feed, large);
+                    } else if !hidden {
+                        overlay.set_focus();
+                    }
+                    if !id.is_empty() {
+                        let _ = overlay_view.evaluate_script(&format!(
+                            "window.__selectAgent && window.__selectAgent('{}')", id));
+                    }
+                }
                 UserEvent::HideOverlay => {
                     overlay.set_outer_position(LogicalPosition::new(PARK.0, PARK.1));
                 }

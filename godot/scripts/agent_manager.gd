@@ -1148,6 +1148,9 @@ func _make_char(id: String) -> Sprite3D:
 	s.pixel_size = 0.07
 	s.billboard = StandardMaterial3D.BILLBOARD_FIXED_Y
 	s.shaded = true
+	# A billboard's shadow is cast from the quad as the LIGHT sees it, so out
+	# in the sun it detached from the feet and looked like it was floating.
+	s.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	return s

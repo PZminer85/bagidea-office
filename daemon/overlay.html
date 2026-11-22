@@ -1824,6 +1824,8 @@
     el.textContent = "";
   }
   let _compId = null;
+  // The native shell calls this after a 3D click has brought the chat up.
+  window.__selectAgent = (id) => { if (id === "ceo" || ROSTER[id]) setTarget(id); };
   function body(el, id) {
     _compId = id;
     const n = npcOf(id);
@@ -8661,7 +8663,10 @@
     }
     if (ev.type === "ui.select") {   // a character was clicked in the 3D office
       const id = String(ev.agent || "").split("#")[0];
-      if (id === "ceo" || ROSTER[id]) setTarget(id);
+      if (id === "ceo" || ROSTER[id]) {
+        setTarget(id);
+        try { if (window.__shellPost) window.__shellPost("show"); } catch {}   // native shell: bring the chat window up
+      }
       return;
     }
     if (ev.type === "ui.monitors") {  // the shell detected the real screen count
