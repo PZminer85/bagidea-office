@@ -183,7 +183,7 @@ func _opaque_after_first_frame() -> void:
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 		DisplayServer.window_set_size(Vector2i(1280, 760))
 		DisplayServer.window_set_position(Vector2i(80, 80))
-		Engine.max_fps = 20
+		Engine.max_fps = 30
 		# niente sfocatura/vignettatura ai bordi né grana pellicola
 		for n in ["CinemaLayer", "GrainLayer"]:
 			var layer := get_node_or_null(n)
@@ -221,15 +221,20 @@ func _process(delta: float) -> void:
 			_apply_daylight()
 
 	if _windowed:
-		# ridotta a icona → 1 fps, in secondo piano → 5 fps, in primo piano → 20 fps
+		# ridotta a icona → 1 fps; in primo piano o a schermo intero → 30 fps
+		# (BAGIDEA_FPS per cambiarlo); in secondo piano ma visibile → metà
+		# (a 5 fps con la chat davanti il 3D andava a scatti)
 		_win_check_timer -= delta
 		if _win_check_timer <= 0.0:
 			_win_check_timer = 0.5
-			var target := 20
-			if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_MINIMIZED:
+			var fps := int(OS.get_environment("BAGIDEA_FPS")) if OS.get_environment("BAGIDEA_FPS") != "" else 30
+			var target := fps
+			var mode := DisplayServer.window_get_mode()
+			if mode == DisplayServer.WINDOW_MODE_MINIMIZED:
 				target = 1
-			elif not DisplayServer.window_is_focused():
-				target = 5
+			elif not DisplayServer.window_is_focused() and mode != DisplayServer.WINDOW_MODE_FULLSCREEN \
+					and mode != DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+				target = maxi(fps / 2, 10)
 			if Engine.max_fps != target:
 				Engine.max_fps = target
 
